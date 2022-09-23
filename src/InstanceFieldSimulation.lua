@@ -39,12 +39,11 @@ module.SimulationEnded = simEndSignal -- callback function(ranSimulation)
 local fieldSimulations = {}
 local objectsCaches = {}
 
-module.Fields = fieldSimulations
-module.ObjectCaches = objectsCaches
-
 local runningSimulations = {}
 
 function module:CreateField(name, func, funcParams)
+	assert(not fieldSimulations[name], "Field with name " .. name .. " already exists")
+	
 	local newFs = FieldSimulation.new(func, funcParams)
 
 	fieldSimulations[name] = newFs
@@ -58,22 +57,6 @@ function module:CreateField(name, func, funcParams)
 	end)
 
 	return newFs
-end
-
-do
-	local GravityFieldParams = {
-		G = workspace.Gravity
-	}
-
-	module:CreateField("Gravity", function(particle, dt)
-		local g = GravityFieldParams.G
-
-		local v0 = particle.Velocity
-		local x0 = particle.Position
-
-		particle.Velocity = v0 + g * dt
-		particle.Position = x0 + v0 * dt + g * (dt ^ 2 / 2)
-	end, GravityFieldParams)
 end
 
 -- new object cache
@@ -148,7 +131,7 @@ function module:Cast(Params) --fieldName, objectName, particleInitialConditions)
 			instance = objectsCaches[_obj]:GetObject()
 			
 			if Params.FilterObjects then
-				t_insert(filterInstances, objectsCaches[_obj].currentCacheParent)
+				filterInstances[#filterInstances + 1] = objectsCaches[_obj].CurrentCacheParent
 			end
 		else
 			instance = _obj
@@ -172,7 +155,7 @@ function module:Cast(Params) --fieldName, objectName, particleInitialConditions)
 		DoRaycast = Params.DoRaycast,
 		OverlapType = Params.OverlapType, -- {0 : Off, 1 : Sphere, 2 : Box. 3 : Part}
 
-		UserData = Params.UserData,
+		UserData = Params.UserData or {},
 
 		_lastPoint = nil
 	}
@@ -196,17 +179,18 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 	local fieldName = Params.Field
 	local particle = Params.Particle
 
-	if not particle.CFrame then error"Missing CFrame" end
+	if type(particle) ~= "function" then error"Expected function for 'Particle'. (providing the same particle for N simulations is redundant. The function is expected to introduce randomness)" end
 	
 	local fs = fieldSimulations[fieldName]
 
 	local _obj = Params.Object
 	local objectCache = objectsCaches[_obj]
+	local currentCacheParent = objectsCaches[_obj].CurrentCacheParent
 	
 	local casts = {}
 	
 	for i = 1, amount do
-		local particle_i = t_clone(particle)
+		local particle_i = particle()
 		
 		fs:Add(particle_i)
 
@@ -217,10 +201,9 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 		local filterType = Params.FilterType
 
 		if Params.FilterObjects then
-			t_insert(filterInstances, objectsCaches[_obj].currentCacheParent)
-			filterInstances[#filterInstances + 1] = objectsCaches[_obj].currentCacheParent
+			filterInstances[#filterInstances + 1] = currentCacheParent
 		end
-
+		
 		local instance = objectCache:GetObject()
 
 		rcp.FilterDescendantsInstances = filterInstances
@@ -240,7 +223,7 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 			DoRaycast = Params.DoRaycast,
 			OverlapType = Params.OverlapType, -- {0 : Off, 1 : Sphere, 2 : Box. 3 : Part}
 
-			UserData = Params.UserData,
+			UserData = Params.UserData or {},
 
 			_lastPoint = nil
 		}
@@ -272,7 +255,7 @@ function module:EndSimulation(runningSim)
 			runningSim.Instance.Parent = workspace
 
 
-			objectCache:Return(instance)
+			objectCache:ReturnObject(instance)
 		end
 	end
 
@@ -287,6 +270,24 @@ function module:EndSimulation(runningSim)
 	runningSimulations[_index], runningSimulations[#runningSimulations] = runningSimulations[#runningSimulations], nil
 
 	simEndSignal:Fire(runningSim)
+end
+
+function module:DestroyField(fieldName, switchToFieldName)
+	local field = fieldSimulations[fieldName]
+	
+	if #field.Particles > 0 then
+		assert(switchToFieldName, "Destroying field has particles. They must be transferred")
+		
+		local switchToField = fieldSimulations[switchToFieldName]
+		
+		for _, p in ipairs(field.Particles) do
+			switchToField:Add(p)
+		end
+	end
+	
+	fieldSimulations[fieldName] = nil
+	
+	field:Destroy()
 end
 
 function module:GetCastFromInstance(instance : (BasePart | Model))
@@ -431,7 +432,13 @@ local simFuncs = {
 
 			fieldFunction(particle, dt)
 		end
-	end
+	end,
+	Destroy = function(self)
+		table.clear(self.Particles)
+		self.ParticleTerminated:Destroy()
+		table.clear(self)
+		self = nil
+	end,
 }
 simFuncs.__index = simFuncs
 
@@ -447,6 +454,24 @@ function FieldSimulation.new(f, params)
 
 		ParticleTerminated = Signal.new(),
 	}, simFuncs)
+end
+
+do
+	local GravityFieldParams = {
+		G = - workspace.Gravity
+	}
+
+	module:CreateField("Gravity", function(particle, dt)
+		local g = GravityFieldParams.G
+
+		local c0 = particle.CFrame
+
+		local v0 = particle.Velocity
+		local x0 = c0.Position
+
+		particle.Velocity = v0 + g * Vector3.yAxis * dt
+		particle.CFrame = c0 + v0 * dt + g * Vector3.yAxis * (dt ^ 2 / 2)
+	end, GravityFieldParams)
 end
 
 return module

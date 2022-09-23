@@ -1,6 +1,6 @@
 local Signal = require(script.Parent.Signal)
 
-local FieldSimulation = {}
+FieldSimulation = {}
 
 local simFuncs = {
 	Add = function(self, particleProperties)
@@ -34,7 +34,13 @@ local simFuncs = {
 
 			fieldFunction(particle, dt)
 		end
-	end
+	end,
+	Destroy = function(self)
+		table.clear(self.Particles)
+		self.ParticleTerminated:Destroy()
+		table.clear(self)
+		self = nil
+	end,
 }
 simFuncs.__index = simFuncs
 
@@ -51,3 +57,5 @@ function FieldSimulation.new(f, params)
 		ParticleTerminated = Signal.new(),
 	}, simFuncs)
 end
+
+return FieldSimulation
