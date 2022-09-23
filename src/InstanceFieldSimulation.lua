@@ -184,8 +184,13 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 	local fs = fieldSimulations[fieldName]
 
 	local _obj = Params.Object
-	local objectCache = objectsCaches[_obj]
-	local currentCacheParent = objectsCaches[_obj].CurrentCacheParent
+	local objectCache;
+	local currentCacheParent;
+	
+	if _obj then
+		objectCache = objectsCaches[_obj]
+		currentCacheParent = objectsCaches[_obj].CurrentCacheParent
+	end
 	
 	local casts = {}
 	
@@ -199,12 +204,16 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 
 		local filterInstances = Params.FilterDescendantsInstances or {}
 		local filterType = Params.FilterType
-
-		if Params.FilterObjects then
-			filterInstances[#filterInstances + 1] = currentCacheParent
-		end
 		
-		local instance = objectCache:GetObject()
+		local instance;
+		
+		if _obj then
+			if Params.FilterObjects then
+				filterInstances[#filterInstances + 1] = currentCacheParent
+			end
+
+			instance = objectCache:GetObject()
+		end
 
 		rcp.FilterDescendantsInstances = filterInstances
 		rcp.FilterType = filterType
