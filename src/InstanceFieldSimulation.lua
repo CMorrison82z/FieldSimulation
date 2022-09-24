@@ -8,11 +8,11 @@ local CAST_TYPES = {
 }
 
 local CAST_DEFAULTS = {
-	DoRaycast = true,
-	OverlapType = CAST_TYPES.None,
-	FilterObjects = true,
+	DoRaycast = false, -- Fire raycasts on each update cycle. These are picked up bt .Hit 
+	OverlapType = CAST_TYPES.None, -- Perform spacial queries
+	FilterObjects = true, -- Whether objects in the same cache should be included in the filtered descendants for raycast and overlap params
 	FilterType = Enum.RaycastFilterType.Blacklist,
-	UpdateParticleOnRayHit = true
+	UpdateParticleOnRayHit = false -- whether to internally update particle.CFrame and particle.Distance on RaycastResults
 }
 
 local CAST_FUNCTION_NAME = "Launch%s"
@@ -143,6 +143,8 @@ function module:Cast(Params) --fieldName, objectName, particleInitialConditions)
 	olp.FilterDescendantsInstances = filterInstances
 	olp.FilterType = filterType
 	
+	particle._lastPoint = nil
+	
 	local runningSim = {
 		Instance = instance,
 		Particle = particle,
@@ -153,11 +155,11 @@ function module:Cast(Params) --fieldName, objectName, particleInitialConditions)
 		OverlapParams = olp,
 
 		DoRaycast = Params.DoRaycast,
+		UpdateParticleOnRayHit = Params.UpdateParticleOnRayHit,
+		
 		OverlapType = Params.OverlapType, -- {0 : Off, 1 : Sphere, 2 : Box. 3 : Part}
 
 		UserData = Params.UserData or {},
-
-		_lastPoint = nil
 	}
 	runningSimulations[#runningSimulations + 1] = runningSim
 
@@ -219,7 +221,9 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 		rcp.FilterType = filterType
 		olp.FilterDescendantsInstances = filterInstances
 		olp.FilterType = filterType
-
+		
+		particle_i._lastPoint = nil
+		
 		local runningSim = {
 			Instance = instance,
 			Particle = particle_i,
@@ -230,11 +234,10 @@ function module:CastN(amount, Params) --fieldName, objectName, particleInitialCo
 			OverlapParams = olp,
 
 			DoRaycast = Params.DoRaycast,
+			UpdateParticleOnRayHit = Params.UpdateParticleOnRayHit,
 			OverlapType = Params.OverlapType, -- {0 : Off, 1 : Sphere, 2 : Box. 3 : Part}
 
-			UserData = Params.UserData or {},
-
-			_lastPoint = nil
+			UserData = Params.UserData or {}
 		}
 
 		runningSimulations[#runningSimulations + 1] = runningSim
@@ -330,22 +333,13 @@ game:GetService"RunService".Heartbeat:Connect(function(deltaTime)
 
 	while i <=  (_throttleCount == 0 and loadSize or (_throttleCount + 1) * loadSize) do
 		local runningSim = runningSimulations[i]
-
+		
 		local instance = runningSim.Instance
 		local particle = runningSim.Particle
 
 		local particleCF = particle.CFrame
-		local lastPoint = runningSim._lastPoint or particleCF.Position
+		local lastPoint = particle._lastPoint or particleCF.Position
 		local thisPoint = particleCF.Position
-
-		if instance then
-			if instance:IsA"BasePart" then
-				baseParts[#baseParts + 1] = instance
-				bpCFs[#bpCFs + 1] = particleCF
-			else
-				instance:PivotTo(particleCF)
-			end
-		end
 
 		if runningSim.DoRaycast then
 			local rcr = workspace:Raycast(lastPoint, thisPoint - lastPoint, runningSim.RaycastParams)
@@ -353,14 +347,15 @@ game:GetService"RunService".Heartbeat:Connect(function(deltaTime)
 			if rcr then
 				-- If it hit's something, the point it hit will be closer than that of nextPoint.
 
-				if particle.Distance then
-					local distanceCorrection = (rcr.Position - lastPoint).Magnitude
+				if runningSim.UpdateParticleOnRayHit then					
+					particleCF = (particleCF - thisPoint) + rcr.Position + .0000025 * rcr.Normal
+					particle.CFrame = particleCF
+					
+					if particle.Distance then
+						local distanceCorrection = (rcr.Position - lastPoint).Magnitude
 
-					particle.Distance -= distanceCorrection
-				end
-
-				if runningSim.UpdateParticleOnRayHit then
-					particle.CFrame = (particleCF - thisPoint) + rcr.Position
+						particle.Distance -= distanceCorrection
+					end
 				end
 
 				hitSignal:Fire(runningSim, rcr)
@@ -399,7 +394,16 @@ game:GetService"RunService".Heartbeat:Connect(function(deltaTime)
 			end
 		end
 
-		runningSim._lastPoint = particleCF.Position
+		if instance then
+			if instance:IsA"BasePart" then
+				baseParts[#baseParts + 1] = instance
+				bpCFs[#bpCFs + 1] = particleCF
+			else
+				instance:PivotTo(particleCF)
+			end
+		end
+		
+		particle._lastPoint = particleCF.Position
 
 		i += 1
 	end
