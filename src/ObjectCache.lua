@@ -82,15 +82,6 @@ local function FullWipe(t)
 	t = nil
 end
 
---Dupes a object from the template.
-local function MakeFromTemplate(self): Object
-	local object: Object = self.Template:Clone()
-
-	object.Parent = self.CurrentCacheParent
-
-	return object
-end
-
 --[=[
     @param template Object
     @param numPrecreatedObjects number?
@@ -123,6 +114,7 @@ function ObjectCache.new(template: Object, numPrecreatedObjects: number?, curren
 	template.Archivable = oldArchivable
 	template = newTemplate
 	newTemplate:PivotTo(CF_REALLY_FAR_AWAY)
+	template.Anchored = true
 
 	local oCache: OCache = {
 		Open = {},
@@ -164,7 +156,11 @@ function ObjectCache.new(template: Object, numPrecreatedObjects: number?, curren
 
 	-- Below: Ignore type mismatch nil | number and the nil | Instance mismatch on the table.insert line.
 	for _ = 1, numPrecreatedObjects do
-		table.insert(oCache.Open, MakeFromTemplate(oCache, template, oCache.CurrentCacheParent))
+		local nObject: Object = template:Clone()
+
+		nObject.Parent = currentCacheParent
+		
+		table.insert(oCache.Open, nObject)
 	end
 	oCache.Template.Parent = nil
 
@@ -181,8 +177,17 @@ function ObjectCache:GetObject(): Object
 
 	if #self.Open == 0 then
 		warn("No objects available in the cache! Creating [" .. self.ExpansionSize .. "] new object instance(s) - this amount can be edited by changing the ExpansionSize property of the ObjectCache instance... (This cache now contains a grand total of " .. tostring(#self.Open + #self.InUse + self.ExpansionSize) .. " objects.)")
+		
+		local template = self.Template
+		local cParent = self.CurrentCacheParent
+		local _open = self.Open
+		
 		for i = 1, self.ExpansionSize, 1 do
-			table.insert(self.Open, MakeFromTemplate(self, self.Template, self.CurrentCacheParent))
+			local nObject: Object = template:Clone()
+
+			nObject.Parent = cParent
+			
+			table.insert(_open, nObject)
 		end
 	end
 	local object = self.Open[#self.Open]
@@ -205,18 +210,6 @@ function ObjectCache:ReturnObject(object: Object)
 		table.remove(self.InUse, index)
 		table.insert(self.Open, object)
 		object:PivotTo(CF_REALLY_FAR_AWAY)
-
-		if self._objectType == "BasePart" then
-			for propName, propVal in pairs(self._selfTemplate[object]) do
-				object[propName] = propVal
-			end
-		else
-			for objectDescendant, descProperties in pairs(self._selfTemplate[object]) do
-				for propName, propVal in pairs(descProperties) do
-					objectDescendant[propName] = propVal
-				end
-			end
-		end
 	else
 		error("Attempted to return object \"" .. object.Name .. "\" (" .. object:GetFullName() .. ") to the cache, but it's not in-use! Did you call this on the wrong object?")
 	end
@@ -250,8 +243,16 @@ function ObjectCache:Expand(amount: number?)
 
 	amount = amount or self.ExpansionSize
 
+	local template = self.Template
+	local cParent = self.CurrentCacheParent
+	local _open = self.Open
+
 	for i = 1, amount do
-		table.insert(self.Open, MakeFromTemplate(self, self.Template, self.CurrentCacheParent))
+		local nObject: Object = template:Clone()
+
+		nObject.Parent = cParent
+		
+		table.insert(_open, nObject)
 	end
 end
 
