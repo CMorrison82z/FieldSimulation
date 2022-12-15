@@ -15,7 +15,6 @@ local CAST_DEFAULTS = {
 	UpdateParticleOnRayHit = false -- whether to internally update particle.CFrame and particle.Distance on RaycastResults
 }
 
-local CAST_FUNCTION_NAME = "Launch%s"
 local CACHE_FOLDER_NAME  = "_%sPartCache"
 
 local INITIAL_CACHE_SIZE = 100
@@ -253,6 +252,8 @@ function module:UpdateSimulationField(runningSim, newField)
 
 	field:Remove(runningSim.Particle)
 
+	runningSim.Field = newField
+
 	fieldSimulations[newField]:Add(runningSim.Particle)
 end
 
@@ -274,8 +275,6 @@ function module:EndSimulation(runningSim)
 	local field = fieldSimulations[runningSim.Field]
 
 	field:Remove(runningSim.Particle)
-
-	simEndSignal:Fire(runningSim)
 
 	local _index = table.find(runningSimulations, runningSim)
 
@@ -324,6 +323,7 @@ game:GetService"RunService".Heartbeat:Connect(function(deltaTime)
 
 	local i =  _throttleCount * loadSize + 1        
 
+	-- ! This is wrong ! To throttle correctly, only the particles within the LOAD should be getting updated !
 	for _, fs in pairs(fieldSimulations) do
 		fs:Update(throttledDeltaTime)
 	end
